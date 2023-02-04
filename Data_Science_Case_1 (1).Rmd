@@ -1,0 +1,201 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+### Load auxiliary R file
+source("DataAnalyticsFunctions.R")
+######################################################
+### Load infant weight data
+load("natalityNew.Rda")
+### This creates a data frame called "d" 
+### This data set has 198377 observations
+### 19 variables but we need to clean up a little
+### Lets see a summary of the data
+summary(d)
+######################################################
+### The following code will clean up the data for you
+###  
+###
+### tri.none is all zeros so we will remove it. 
+### birmon is all 6 so we will remove it.
+### Also, there are redundancies (and identifier number). 
+### We will remove the following varaibles: "id","birmon","tri.none","novisit"
+### to do that lets create a vector with those names
+drops <- c("id","birmon","tri.none","novisit")
+### names(d) has all the column names. We want to REMOVE the names in drops
+### names(d) %in% drops tells you which entry of names(d) is in drops
+names(d) %in% drops
+### this is a value of true/false for each column
+### since we want "not in" we reverse that with the command "!"
+!( names(d) %in% drops )
+### we can use the logical vector above to select the columns
+### the following command creates a dataframe (called DATA) 
+### which has all the columns from d not in drops
+DATA <- d[,!(names(d) %in% drops)]
+summary(DATA)
+
+```
+
+
+```{r}
+### Question 1: Finding a significant relationship between 2 variables.
+
+### When plotting different visualizations of various variables, the visualizations with barplot made much more sense
+### We found a meaningful relationship between mom age and smoking and plotted barplot to visually see those relationships
+
+### computing total number of smokers per age
+age_smoke <- aggregate(smoke ~ mom.age, data = DATA, sum)
+
+### Making barplot for total number of smokers for each age
+barplot(age_smoke[,2], names.arg = age_smoke[,1], main = "Mom Age vs Smoke", xlab = "Mom age", ylab = "Number of smokers")
+
+### We can also check whether, on average, moms who smoke have babies that have lower weight than those who don't smoke
+mean_smoke <- aggregate(weight ~ smoke, data = DATA, mean)
+
+### barplot of mean weight of babies per smoke group
+barplot(mean_smoke[,2], names.arg = mean_smoke[,1], ylim = c(0,4), xlab = "Smoke", ylab = "Average Weight")
+
+### One implication may be that smoking does indeed impact negatively on baby weight
+
+```
+
+
+```{r}
+# Question 2 : Testing the independence of variables 
+### Organizational help for Question 2 
+### 
+### This creates a matrix with only the 10 binary variables 
+MatrixComp <- as.matrix( cbind( DATA$boy, DATA$tri1, DATA$tri2, DATA$tri3, DATA$black, DATA$married, DATA$ed.hs, DATA$ed.smcol, DATA$ed.col, DATA$smoke ))  
+### Here is the associated LAbels (for convenience)
+LabelsTmp <- c( "boy", "tri1", "tri2", "tri3", "black", "married", "ed.hs", "ed.smcol", "ed.col","smoke")
+### Number of columns (should be 10)
+NumCol <- ncol(MatrixComp)
+### Next we compute the p-values for each pair
+pvals <- rep(0, NumCol*(NumCol-1)/2) 
+### Also will collect the pair label
+ListLabels <- rep("", NumCol*(NumCol-1)/2) 
+k <- 0
+for (i in 1:(NumCol-1) ){
+  for ( j in (i+1):NumCol ){
+    k <- k+1
+    ### Creates the entries of the contingency table
+    m00 <- sum( (MatrixComp[,i] == 0) & (MatrixComp[,j] == 0) ) 
+    m01 <- sum( (MatrixComp[,i] == 0) & (MatrixComp[,j] == 1) ) 
+    m10 <- sum( (MatrixComp[,i] == 1) & (MatrixComp[,j] == 0) ) 
+    m11 <- sum( (MatrixComp[,i] == 1) & (MatrixComp[,j] == 1) ) 
+    ### Construct the contingency table
+    ContingencyMatrix <- as.table(rbind(c(m00, m01), c(m10, m11)))
+    ### Perform the Pearson chi squares test for independent of factors
+    # store the p-value of the test 
+    pvals[k] <- chisq.test(ContingencyMatrix)$p.value  
+    # create the Label
+    ListLabels[k] <- paste(LabelsTmp[i],LabelsTmp[j], sep=" and ")  
+  }  
+}
+###############################################################
+### Now you have:
+### a list of p-values; and
+### a list of labels to help you identify which are the variables 
+###
+### pvals: is a vector with 45 p-values each associated with an independency test
+### ListLabels: is a vector with the labels of the 2 variables used on each the independence test
+
+
+## We can list out the variables that are dependent as they do not meet the 0.05 traditional threshold
+print("Testing independance")
+ListLabels[pvals > 0.05]
+##Using Bonferroni correction we must do, alpha_new = 0.05/45 = 0.001111111
+print("After applying Bonferroni correction")
+ListLabels[pvals > 0.05/45]
+
+```
+
+```{r}
+### Question 3
+library(caTools)
+
+#Splitting the data into training and testing
+split = sample.split(d$weight, SplitRatio = 0.8)
+training_set <- subset(DATA, split == TRUE)
+test_set <- subset(DATA, split == FALSE)
+
+```
+
+```{r}
+
+### Question 3
+
+library("corrplot")
+
+### Creating a correlation matrix
+corrplot(cor(DATA))
+
+#Trying out different models based on what we thought would be a good predictor for weight
+model1<-lm(training_set$weight~training_set$m.wtgain)
+summary(model1)
+
+model2<-lm(training_set$weight~training_set$mom.age)
+summary(model2)
+
+model3<-lm(training_set$weight~training_set$mom.age2)
+summary(model3)
+
+model4<-lm(training_set$weight~training_set$mom.age+ training_set$m.wtgain)
+summary(model4)
+
+model5<-lm(training_set$weight~training_set$mom.age2+ training_set$m.wtgain + training_set$cigsper )
+summary(model5)
+
+model6<-lm(training_set$weight~training_set$mom.age2+ training_set$m.wtgain + training_set$cigsper+training_set$black+training_set$married)
+summary(model6)
+
+# The final model that we ended up with, because it showed better results (i.e. lower Residual Standard Error)
+model7 <- lm(weight~black+married+boy+tri1+tri2+tri3+ed.hs+ed.smcol+ed.col+mom.age+smoke+cigsper+m.wtgain+mom.age2, DATA)
+summary(model7)
+```
+```{r}
+#Using the model to make predictions of infant birth weight on the testing set
+
+#Data frame for forecasting. Dropping the column that we are trying to forecast
+test_set_new <- subset(test_set,select=-weight)
+
+# making the prediction
+forecast <- predict(model7,newdata = test_set_new, interval = "prediction")
+
+# Joining data frame of forecast with actual values
+forecasted_values <- data.frame(forecast, "Actual" = test_set$weight)
+
+#Computing the root mean squared error of the testing set
+RMSE <-sqrt(mean((forecasted_values$fit - forecasted_values$Actual)^2))
+
+anova(model7)
+```
+
+
+
+
+```{r}
+
+### Question 4
+### Making a model with 14 variables mentioned in exhibit 1
+
+model_x <- lm(DATA$weight ~ ., data = DATA)
+
+summary(model_x)
+which(summary(model_x)$coef[,4] < 0.05)
+which(summary(model_x)$coef[,4] < 0.05/14)
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
